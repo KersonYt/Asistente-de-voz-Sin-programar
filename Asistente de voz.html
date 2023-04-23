@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Recorder</title>
+	<style>
+		body {
+			background-color: #353541;
+			display: flex;
+			flex-direction: column;
+			justify-content: center;
+			align-items: center;
+			height: 100vh;
+			margin: 0;
+			padding: 0;
+		}
+	
+		.circle {
+			width: 50px;
+			height: 50px;
+			background-color: red;
+			border-radius: 50%;
+			cursor: pointer;
+			margin-bottom: 10px;
+		}
+	
+		.rectangle {
+			background-color: blue;
+			padding: 10px 20px;
+			border: 2px solid black;
+			border-radius: 5px;
+			color: white;
+			font-weight: bold;
+			cursor: pointer;
+			margin-bottom: 10px;
+		}
+	
+		#message {
+			display: none;
+			width: 33.3%;
+			text-align: center;
+			color: white;
+			word-wrap: break-word;
+			size: 10px
+		}
+	</style>
+
+</head>
+<body>
+    <div class="circle" id="recordButton"></div>
+    <button class="rectangle" id="sendButton">Enviar</button>
+    <audio controls id="audioPreview" style="display: none;"></audio>
+    <p id="message"></p>
+    
+    <script type="module">
+		const recordButton = document.getElementById('recordButton');
+		const sendButton = document.getElementById('sendButton');
+		const audioPreview = document.getElementById('audioPreview');
+		const message = document.getElementById('message');
+		
+		let isRecording = false;
+		let mediaRecorder = null;
+		let audioBlob = null;
+	
+		async function startRecording() {
+			const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+			mediaRecorder = new MediaRecorder(stream);
+			mediaRecorder.start();
+	
+			mediaRecorder.ondataavailable = (e) => {
+				audioBlob = new Blob([e.data], { type: 'audio/webm' });
+				const audioUrl = URL.createObjectURL(audioBlob);
+				audioPreview.src = audioUrl;
+				audioPreview.style.display = 'block';
+			};
+		}
+	
+		function stopRecording() {
+			if (mediaRecorder) {
+				mediaRecorder.stop();
+			}
+		}
+	
+		async function sendAudio(audioBlob) {
+			const url = 'https://api.openai.com/v1/audio/transcriptions';
+			const token = 'TU_TOKEN'; // Reemplaza esto con tu token de API real.
+	
+			const formData = new FormData();
+			formData.append('file', audioBlob, 'openai.mp3');
+			formData.append('model', 'whisper-1');
+	
+			const response = await fetch(url, {
+				method: 'POST',
+				headers: {
+					'Authorization': `Bearer ${token}`,
+				},
+				body: formData,
+			});
+	
+			return response;
+		}
+	
+		recordButton.addEventListener('click', () => {
+			if (!isRecording) {
+				startRecording();
+				recordButton.style.backgroundColor = 'rgba(255, 0, 0, 0.5)';
+			} else {
+				stopRecording();
+				recordButton.style.backgroundColor = 'red';
+			}
+	
+			isRecording = !isRecording;
+		});
+	
+		sendButton.addEventListener('click', async () => {
+			if (audioBlob) {
+				message.style.display = 'block';
+				message.innerText = "Enviando audio...";
+		
+				try {
+					const response = await sendAudio(audioBlob);
+					if (response.ok) {
+						const data = await response.json();
+						const receivedText = data.text;
+		
+						message.innerHTML = `Pregunta: ${receivedText}<br>`;
+		
+						const chatResponse = await fetchChatCompletion(receivedText);
+						if (chatResponse.ok) {
+							const chatData = await chatResponse.json();
+							const assistantContent = chatData.choices[0].message.content;
+		
+							message.innerHTML += `Respuesta: ${assistantContent}`;
+		
+							// Reproducir la respuesta en forma de audio
+							textToSpeech(assistantContent);
+						} else {
+							message.innerText += `Error en la llamada al chat: ${chatResponse.status} - ${chatResponse.statusText}`;
+						}
+					} else {
+						message.innerText = `Error: ${response.status} - ${response.statusText}`;
+					}
+				} catch (error) {
+					message.innerText = `Error: ${error.message}`;
+				}
+		
+			} else {
+				message.style.display = 'block';
+				message.innerText = 'No hay audio para enviar';
+			}
+		});
+
+function textToSpeech(text) {
+    const synth = window.speechSynthesis;
+    const utterance = new SpeechSynthesisUtterance(text);
+    synth.speak(utterance);
+}
+
+
+async function fetchChatCompletion(PreguntaAChatGPT) {
+    const url = 'https://api.openai.com/v1/chat/completions';
+    const token = 'TU_TOKEN'; // Reemplaza esto con tu token de API real.
+
+    const payload = {
+        model: 'gpt-3.5-turbo',
+        messages: [
+            { role: 'system', content: 'Eres un asistente de voz.' },
+            { role: 'user', content: PreguntaAChatGPT },
+        ],
+    };
+
+    const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(payload),
+    });
+
+    return response;
+}
+
+	</script>
+	</body>
+</html>
+
+               
